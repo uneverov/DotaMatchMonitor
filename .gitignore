@@ -1,0 +1,55 @@
+# ===============================
+# Visual Studio / Rider / .NET
+# ===============================
+
+## User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Build results
+bin/
+obj/
+out/
+
+## Rider
+.idea/
+*.sln.iml
+
+## Visual Studio Code
+.vscode/
+
+# ===============================
+# NuGet packages
+# ===============================
+*.nupkg
+*.snupkg
+packages/
+# NuGet v3 cache
+*.nuget/
+
+# ===============================
+# Logs, temporary files
+# ===============================
+*.log
+*.vs/
+*.DS_Store
+*.db
+*.tmp
+*.bak
+
+# ===============================
+# Environment files / secrets
+# ===============================
+.env
+.env.local
+.env.*.local
+
+# ===============================
+# Project-specific exclusions
+# ===============================
+# Сборка базы данных или кэш Dota
+*.sqlite
+*.db-journal
