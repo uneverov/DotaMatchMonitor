@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 using DotNetEnv;
@@ -8,41 +9,26 @@ using DotaMatchMonitor.Services;
 using DotaMatchMonitor.Infrastructure;
 using DotaMatchMonitor.Helpers;
 
+
 namespace DotaMatchMonitor;
 
 class App
 {
-    private static MatchChecker? checker;
-    private static SteamService? steamService;
-    private static DotaDatabase? db;
-    static readonly string tgBotToken;
-    static readonly long tgChatId;
-    static readonly TgClient tg;
-    
-    static App()
+    static async Task Main(string[] args)
     {
         Env.Load();
-        tgBotToken = Environment.GetEnvironmentVariable("TG_BOT_TOKEN")
-            ?? throw new Exception("TG_BOT_TOKEN not set");
-
-        tgChatId = long.Parse(
-            Environment.GetEnvironmentVariable("TG_CHAT_ID")
-            ?? throw new Exception("TG_CHAT_ID not set")
-        );
-        tg = new TgClient(tgBotToken, tgChatId);
-        
-    }
-    static async Task Main()
-    {
         LoggingConfigurator.Configure();
-        Log.Information("🚀 Запуск DotaMatchMonitor");
-        db = new DotaDatabase();
-        steamService = new SteamService();
-        steamService.InitializeSteam();
-        checker = new MatchChecker(steamService.GetGameCoordinator(), db);
-        steamService.SetChecker(checker);
 
-        await TgClient.NotifyTrackedPlayersAsync(db);
+        bool sendToTelegram = !args.Contains("-t");
+        Log.Information("🚀 Запуск DotaMatchMonitor");
+
+        var tg = new TgClient(sendToTelegram);
+        var db = new DotaDatabase();
+        var steamService = new SteamService();
+        var checker = new MatchChecker(steamService.GC, db);
+        var _ = new GCMessageHandler(steamService.SC, steamService.GC, tg, checker);
+
+        await tg.NotifyTrackedPlayersAsync(db);
         await ConsoleHelper.WaitForExitAsync(checker);
     }
 }

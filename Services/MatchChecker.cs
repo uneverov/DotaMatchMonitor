@@ -1,6 +1,6 @@
 using System;
-using Timer = System.Timers.Timer;
 using System.Collections.Generic;
+using Timer = System.Timers.Timer;
 
 using Serilog;
 using SteamKit2;
@@ -11,14 +11,16 @@ using DotaMatchMonitor.Infrastructure;
 
 namespace DotaMatchMonitor.Services;
 
+
 public class MatchChecker
 {
     const int DOTA_APP_ID = 570;
-    private readonly List<uint> TrackedIds;
+    private readonly List<uint> _trackedIds;
+    public IReadOnlyList<uint> TrackedIds => _trackedIds;
     static DateTime _requestTime;
-    private uint _currentAccountId = 0;
+    public uint currentAccountId = 0;
     private int _currentPlayerIndex = 0;
-    private bool _waitingForResponse = false;
+    public bool waitingForResponse = false;
     private readonly DotaDatabase _db;
     private readonly SteamGameCoordinator _gc;
     private Timer? _checkTimer;
@@ -26,8 +28,7 @@ public class MatchChecker
     {
         _db = db;
         _gc = gc;
-
-        TrackedIds = _db.GetTrackedPlayerIds();
+        _trackedIds = _db.GetTrackedPlayerIds();
     }
     
     public void ProcessMatchHistory(SteamGameCoordinator.MessageCallback cb)
@@ -35,15 +36,15 @@ public class MatchChecker
         
         try
         {
-            if (_currentAccountId == 0)
+            if (currentAccountId == 0)
             {
                 Log.Warning("⚠️ Получен ответ, но неизвестно для какого аккаунта");
-                _waitingForResponse = false;
+                waitingForResponse = false;
                 return;
             }
 
             var response = new ClientGCMsgProtobuf<CMsgDOTAGetPlayerMatchHistoryResponse>(cb.Message);
-            uint accountId = _currentAccountId;
+            uint accountId = currentAccountId;
 
             Log.Information($"📜 Получены матчи для {accountId}: {response.Body.matches.Count}");
 
@@ -69,11 +70,6 @@ public class MatchChecker
         catch (Exception ex)
         {
             Log.Error($"❌ Ошибка обработки истории матчей: {ex.Message}");
-        }
-        finally
-        {
-            _waitingForResponse = false;
-            _currentAccountId = 0;
         }
     }
     public void StartSequentialChecking()
@@ -101,13 +97,13 @@ public class MatchChecker
             Log.Information("❌ Нет игроков для отслеживания");
             return;
         }
-        if (_waitingForResponse)
+        if (waitingForResponse)
         {
             if ((DateTime.Now - _requestTime).TotalSeconds > 10)
             {
                 Log.Warning("⏰ Таймаут ответа GC");
-                _waitingForResponse = false;
-                _currentAccountId = 0;
+                waitingForResponse = false;
+                currentAccountId = 0;
             }
             else
             {
@@ -119,15 +115,15 @@ public class MatchChecker
         if (_currentPlayerIndex >= TrackedIds.Count)
             _currentPlayerIndex = 0;
 
-        _currentAccountId = TrackedIds[_currentPlayerIndex];
+        currentAccountId = TrackedIds[_currentPlayerIndex];
         _currentPlayerIndex++;
-        string? nickname = _db?.GetNickname(_currentAccountId);
-        string displayName = !string.IsNullOrEmpty(nickname) ? $"{_currentAccountId}({nickname})" : _currentAccountId.ToString();
+        string? nickname = _db?.GetNickname(currentAccountId);
+        string displayName = !string.IsNullOrEmpty(nickname) ? $"{currentAccountId}({nickname})" : currentAccountId.ToString();
         Log.Information($"🔍 Проверка игрока {displayName}({DateTime.Now:HH:mm:ss})");
 
         _requestTime = DateTime.Now;
-        _waitingForResponse = true;
-        RequestLastMatch(_currentAccountId);
+        waitingForResponse = true;
+        RequestLastMatch(currentAccountId);
     }
     public void RequestMatchDetails(ulong matchId)
     {
@@ -163,19 +159,20 @@ public class MatchChecker
         catch (Exception ex)
         {
             Log.Error($"❌ Ошибка запроса для {accountId}: {ex.Message}");
-            _waitingForResponse = false;
-            _currentAccountId = 0;
+            waitingForResponse = false;
+            currentAccountId = 0;
         }
     }
     public void StopSequentialChecking()
-{
-    if (_checkTimer != null)
     {
-        _checkTimer.Stop();
-        _checkTimer.Dispose();
-        _checkTimer = null;
-        Log.Information("🛑 Последовательная проверка остановлена");
-        Log.Information("👋 Программа завершена");
+        if (_checkTimer != null)
+        {
+            _checkTimer.Stop();
+            _checkTimer.Dispose();
+            _checkTimer = null;
+            Log.Information("🛑 Последовательная проверка остановлена");
+            Log.Information("👋 Программа завершена");
+        }
     }
-}
+    
 }

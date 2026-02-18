@@ -16,7 +16,7 @@ out/
 
 ## Rider
 .idea/
-*.sln.iml
+*.sln
 
 ## Visual Studio Code
 .vscode/
@@ -33,6 +33,8 @@ packages/
 # ===============================
 # Logs, temporary files
 # ===============================
+*.logs
+logs/
 *.log
 *.vs/
 *.DS_Store
