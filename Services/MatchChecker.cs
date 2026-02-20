@@ -20,14 +20,15 @@ public class MatchChecker
     static DateTime _requestTime;
     public uint currentAccountId = 0;
     private int _currentPlayerIndex = 0;
+    private Random _random = new();
     public bool waitingForResponse = false;
     private readonly DotaDatabase _db;
     private readonly SteamGameCoordinator _gc;
     private Timer? _checkTimer;
-    public MatchChecker(SteamGameCoordinator gc, DotaDatabase db)
+    public MatchChecker(SteamService steamService, DotaDatabase db)
     {
         _db = db;
-        _gc = gc;
+        _gc = steamService.GC;
         _trackedIds = _db.GetTrackedPlayerIds();
     }
     
@@ -72,6 +73,22 @@ public class MatchChecker
             Log.Error($"❌ Ошибка обработки истории матчей: {ex.Message}");
         }
     }
+    private void SetRandomInterval()
+    {
+        string checkInterval = Environment.GetEnvironmentVariable("CHECK_INTERVAL_MS") ?? "420000-600000";
+        var range = checkInterval.Split('-');
+        
+        int minMs = int.Parse(range[0]);
+        int maxMs = int.Parse(range[1]);
+        int randomInterval = _random.Next(minMs, maxMs + 1);
+        
+        _checkTimer = new Timer(randomInterval)
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+    }
+    
     public void StartSequentialChecking()
     {
         if (TrackedIds.Count == 0)
@@ -79,13 +96,18 @@ public class MatchChecker
             Log.Information("❌ Нет игроков для отслеживания");
             return;
         }
+        
+        // string _checkInterval = Environment.GetEnvironmentVariable("CHECK_INTERVAL_MS") ?? "420000-600000";
 
-        _checkTimer = new Timer(60000);
-        _checkTimer.Elapsed += (s, e) => CheckNextPlayer();
-        _checkTimer.AutoReset = true;
-        _checkTimer.Enabled = true;
+        // _checkTimer = new Timer(double.Parse(_checkInterval))
+        // {
+        //     AutoReset = true,
+        //     Enabled = true
+        // };
+        SetRandomInterval();
+        _checkTimer?.Elapsed += (s, e) => CheckNextPlayer();
 
-        Log.Information($"⏰ Последовательная проверка запущена (каждые {_checkTimer.Interval / 1000} секунд)");
+        Log.Information($"⏰ Последовательная проверка запущена (каждые {_checkTimer?.Interval / 1000} секунд)");
 
         CheckNextPlayer();
     }
@@ -111,7 +133,6 @@ public class MatchChecker
             }
         }
 
-        // Берем следующего игрока по кругу
         if (_currentPlayerIndex >= TrackedIds.Count)
             _currentPlayerIndex = 0;
 

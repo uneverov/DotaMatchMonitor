@@ -1,3 +1,5 @@
+using System;
+
 using SteamKit2.GC.Dota.Internal;
 
 namespace DotaMatchMonitor.Helpers;
@@ -8,11 +10,12 @@ public static class FormaterHelper
         dynamic player_stats,
         string? heroName,
         string resultText,
-        uint matchDuration)
+        uint matchDuration,
+        DateTime matchStart)
     {
         heroName ??= "Unknown";
         return
-            $"<b>{player_stats.player_name}</b> - {resultText}\n\n" +
+            $"<b>[Начало матча: {matchStart}] {player_stats.player_name}</b> - {resultText} \n\n" +
             $"🧙 <b>Герой:</b> <code>{heroName}</code>\n" +
             $"⚔️ <b>Урон:</b> <code>{player_stats.hero_damage}</code>\n" +
             $"🏰 <b>Урон по постройкам:</b> <code>{player_stats.tower_damage}</code>\n" +
