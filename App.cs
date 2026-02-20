@@ -3,12 +3,11 @@ using System.Linq;
 using System.Threading.Tasks;
 
 using DotNetEnv;
-using Serilog;
+using Microsoft.Extensions.DependencyInjection;
 
 using DotaMatchMonitor.Services;
 using DotaMatchMonitor.Infrastructure;
 using DotaMatchMonitor.Helpers;
-
 
 namespace DotaMatchMonitor;
 
@@ -20,13 +19,22 @@ class App
         LoggingConfigurator.Configure();
 
         bool sendToTelegram = !args.Contains("-t");
-        Log.Information("🚀 Запуск DotaMatchMonitor");
 
-        var tg = new TgClient(sendToTelegram);
-        var db = new DotaDatabase();
-        var steamService = new SteamService();
-        var checker = new MatchChecker(steamService.GC, db);
-        var _ = new GCMessageHandler(steamService.SC, steamService.GC, tg, checker);
+        var services = new ServiceCollection();
+
+        services.AddSingleton(new TgClient(sendToTelegram));
+        services.AddSingleton<DotaDatabase>();
+        services.AddSingleton<SteamService>();
+        services.AddSingleton<MatchChecker>();
+        services.AddSingleton<GCMessageHandler>();
+
+        var provider = services.BuildServiceProvider();
+
+        var tg = provider.GetRequiredService<TgClient>();
+        var db = provider.GetRequiredService<DotaDatabase>();
+        var checker = provider.GetRequiredService<MatchChecker>();
+        provider.GetRequiredService<SteamService>();
+        provider.GetRequiredService<GCMessageHandler>();
 
         await tg.NotifyTrackedPlayersAsync(db);
         await ConsoleHelper.WaitForExitAsync(checker);

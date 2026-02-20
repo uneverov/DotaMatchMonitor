@@ -15,6 +15,7 @@ public static class JsonHelper
 
         using var http = new HttpClient();
         string json = await http.GetStringAsync(url);
+        
         return JsonDocument.Parse(json);
     }
 

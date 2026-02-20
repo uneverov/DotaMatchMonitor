@@ -20,17 +20,24 @@ public class GCMessageHandler
     string? steamPassword;
     bool running = true;
     const int DOTA_APP_ID = 570;
+    private bool _gcInitializing = false;
     private readonly SteamClient _steamClient;
-    private JsonDocument? heroDict;
+    private readonly JsonDocument? heroDict;
     private readonly SteamGameCoordinator _gc = null!;
     private readonly TgClient _tg = null!;
     private readonly MatchChecker _checker = null!;
-    public GCMessageHandler(SteamClient steamClient, SteamGameCoordinator gc, TgClient? tg, MatchChecker? checker)
+    public GCMessageHandler(SteamService steamService, TgClient? tg, MatchChecker? checker)
     {
-        _steamClient = steamClient;
-        _gc = gc ?? throw new ArgumentNullException(nameof(gc));
-        _tg = tg ?? throw new ArgumentNullException(nameof(tg));
-        _checker = checker ?? throw new ArgumentNullException(nameof(checker));
+        heroDict = JsonHelper.LoadHeroesFromOpenDotaAsync().GetAwaiter().GetResult();
+        
+        ArgumentNullException.ThrowIfNull(steamService);
+        ArgumentNullException.ThrowIfNull(tg);
+        ArgumentNullException.ThrowIfNull(checker);
+        _steamClient = steamService.SC;
+        _gc = steamService.GC;
+        _tg = tg;
+        _checker = checker;
+
         var manager = new CallbackManager(_steamClient);
         var steamUser = _steamClient.GetHandler<SteamUser>();
         manager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
@@ -81,29 +88,57 @@ public class GCMessageHandler
             running = false;
             return;
         }
-
         Log.Information("✅ Успешный вход в Steam!");
+        _ = EnsureDotaGcSessionAsync();
+        
+    }
 
-        var playGame = new ClientMsgProtobuf<SteamKit2.Internal.CMsgClientGamesPlayed>(EMsg.ClientGamesPlayed);
-        playGame.Body.games_played.Add(new SteamKit2.Internal.CMsgClientGamesPlayed.GamePlayed
+    private async Task EnsureDotaGcSessionAsync()
+    {
+        if (_gcInitializing)
+            return;
+
+        _gcInitializing = true;
+
+        try
         {
-            game_id = new GameID(DOTA_APP_ID),
-        });
+            Log.Information("🔄 Инициализация/реинициализация Dota GC...");
+            
+            var playGame = new ClientMsgProtobuf<SteamKit2.Internal.CMsgClientGamesPlayed>(
+                EMsg.ClientGamesPlayed);
 
-        _steamClient!.Send(playGame);
-        Thread.Sleep(3000);
+            playGame.Body.games_played.Add(
+                new SteamKit2.Internal.CMsgClientGamesPlayed.GamePlayed
+                {
+                    game_id = new GameID(DOTA_APP_ID),
+                });
 
-        var clientHello = new ClientGCMsgProtobuf<CMsgClientHello>(
-            (uint)EGCBaseClientMsg.k_EMsgGCClientHello);
-        clientHello.Body.engine = ESourceEngine.k_ESE_Source2;
+            _steamClient.Send(playGame);
 
-        _gc.Send(clientHello, DOTA_APP_ID);
-        Log.Information("🎮 Отправлен hello Game Coordinator");
+            await Task.Delay(2000);
+
+            var clientHello = new ClientGCMsgProtobuf<CMsgClientHello>(
+                (uint)EGCBaseClientMsg.k_EMsgGCClientHello);
+
+            clientHello.Body.engine = ESourceEngine.k_ESE_Source2;
+
+            _gc.Send(clientHello, DOTA_APP_ID);
+
+            Log.Information("🎮 GC Hello отправлен");
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"❌ Ошибка инициализации GC: {ex.Message}");
+        }
+        finally
+        {
+            _gcInitializing = false;
+        }
     }
     public void OnGCMessage(SteamGameCoordinator.MessageCallback cb)
     {
         Log.Information($"📨 GC сообщение: {cb.EMsg}");
-
+        
         if (cb.EMsg == 4004)
         {
             Log.Information("✅ Подключено к Dota 2 Game Coordinator");
@@ -120,7 +155,6 @@ public class GCMessageHandler
         if (cb.EMsg == (uint)EDOTAGCMsg.k_EMsgGCMatchDetailsResponse)
         {
             Log.Information("✅ Получены детали матча");
-            heroDict = JsonHelper.LoadHeroesFromOpenDotaAsync().GetAwaiter().GetResult();
             var response = new ClientGCMsgProtobuf<CMsgGCMatchDetailsResponse>(cb.Message);
             bool direWon = response.Body.match.match_outcome == EMatchOutcome.k_EMatchOutcome_DireVictory;
             for (int i = 0; i < response.Body.match.players.Count; i++)
@@ -129,9 +163,11 @@ public class GCMessageHandler
                 if (response.Body.match.players[i].account_id == currentPlayerId)
                 {
                     var player_stats = response.Body.match.players[i];
-                    string heroName = JsonHelper.GetHeroName(heroDict, player_stats);
+                    long unixTime = response.Body.match.starttime;
+                    DateTime matchStart = DateTimeOffset.FromUnixTimeSeconds(unixTime).LocalDateTime;
+                    string heroName = JsonHelper.GetHeroName(heroDict!, player_stats);
                     string resultText = FormaterHelper.GetMatchResultText(player_stats, direWon);
-                    string message = FormaterHelper.FormatPlayerMessage(player_stats, heroName, resultText, response.Body.match.duration);
+                    string message = FormaterHelper.FormatPlayerMessage(player_stats, heroName, resultText, response.Body.match.duration, matchStart);
                     Log.Information($"Отправляем в tg сообщение:\n{message}");
                     _tg?.SendMessageAsync(message);
                     _checker.waitingForResponse = false;
@@ -139,6 +175,20 @@ public class GCMessageHandler
                     break;
                 }
             }
+            return;
+        }
+        if (cb.EMsg == (uint)EGCBaseClientMsg.k_EMsgGCClientConnectionStatus)
+        {
+            var status = new ClientGCMsgProtobuf<CMsgConnectionStatus>(cb.Message);
+
+            Log.Warning($"📡 GC статус: {status.Body.status}");
+
+            if (status.Body.status != GCConnectionStatus.GCConnectionStatus_HAVE_SESSION)
+            {
+                Log.Warning("⚠️ GC session lost. Реинициализация...");
+                _ = EnsureDotaGcSessionAsync();
+            }
+
             return;
         }
     }

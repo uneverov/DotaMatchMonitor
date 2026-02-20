@@ -24,10 +24,10 @@ public class MatchChecker
     private readonly DotaDatabase _db;
     private readonly SteamGameCoordinator _gc;
     private Timer? _checkTimer;
-    public MatchChecker(SteamGameCoordinator gc, DotaDatabase db)
+    public MatchChecker(SteamService steamService, DotaDatabase db)
     {
         _db = db;
-        _gc = gc;
+        _gc = steamService.GC;
         _trackedIds = _db.GetTrackedPlayerIds();
     }
     
@@ -79,11 +79,16 @@ public class MatchChecker
             Log.Information("❌ Нет игроков для отслеживания");
             return;
         }
+        
+        string check_interval = Environment.GetEnvironmentVariable("CHECK_INTERVAL_MS") ?? "90000";
 
-        _checkTimer = new Timer(60000);
+        _checkTimer = new Timer(double.Parse(check_interval))
+        {
+            AutoReset = true,
+            Enabled = true
+        };
+
         _checkTimer.Elapsed += (s, e) => CheckNextPlayer();
-        _checkTimer.AutoReset = true;
-        _checkTimer.Enabled = true;
 
         Log.Information($"⏰ Последовательная проверка запущена (каждые {_checkTimer.Interval / 1000} секунд)");
 
@@ -111,7 +116,6 @@ public class MatchChecker
             }
         }
 
-        // Берем следующего игрока по кругу
         if (_currentPlayerIndex >= TrackedIds.Count)
             _currentPlayerIndex = 0;
 
